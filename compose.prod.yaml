@@ -1,0 +1,46 @@
+# Production settings, layered on top of compose.yaml:
+#
+#   docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+#
+# Compose merges the two files. This file changes only what differs in
+# production:
+#   - Gunicorn runs the API instead of Flask's development server.
+#   - nginx serves the built frontend instead of the Vite dev server.
+#   - Containers restart on their own after a crash or a reboot.
+#   - The frontend joins the "edge" network, where a reverse proxy (Caddy on
+#     the deployment server) reaches it and adds HTTPS. No port is published.
+
+services:
+  redis:
+    restart: unless-stopped
+
+  backend:
+    # A unique network alias, so nginx reaches this backend and not another
+    # app's container that happens to be called "backend".
+    networks:
+      default:
+        aliases: [mad3-api]
+    command: >
+      sh -c "[ -f /data/exams.db ] || python seed.py;
+             gunicorn --workers 2 --bind 0.0.0.0:5000 'app:create_app()'"
+    restart: unless-stopped
+
+  worker:
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    container_name: mad3-frontend
+    environment:
+      API_UPSTREAM: http://mad3-api:5000
+    # !reset removes the 5173 port from compose.yaml. The reverse proxy
+    # reaches the container over the edge network instead.
+    ports: !reset []
+    networks: [default, edge]
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true

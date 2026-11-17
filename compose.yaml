@@ -1,0 +1,60 @@
+# Runs the whole app with one command:
+#
+#   docker compose up --build
+#
+# Then open http://localhost:5173. Compose starts four containers, one for
+# each part of the architecture in README.md. Containers find each other by
+# service name: the backend reaches Redis at redis:6379, not localhost:6379.
+
+services:
+  # Cache for exam stats, and the queue between Flask and Celery.
+  redis:
+    image: redis:7-alpine
+
+  # The Flask REST API.
+  backend:
+    build: ./backend
+    # On the first start, no database exists yet, so the command runs seed.py
+    # to add demo data. On later starts, it skips seeding to keep your data.
+    # --host 0.0.0.0 lets other containers reach Flask.
+    command: >
+      sh -c "[ -f /data/exams.db ] || python seed.py;
+             flask --app app run --host 0.0.0.0 --port 5000 --debug"
+    environment: &backend-env
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: sqlite:////data/exams.db
+      REPORTS_DIR: /data/reports
+    volumes:
+      - app-data:/data
+    depends_on:
+      - redis
+
+  # The Celery worker. It uses the same image and settings as the backend,
+  # and shares its volume so both see the same database and report files.
+  worker:
+    build: ./backend
+    command: celery -A celery_worker.celery worker --loglevel=info
+    environment: *backend-env
+    volumes:
+      - app-data:/data
+    depends_on:
+      - redis
+      - backend
+
+  # The Vue frontend. The browser talks only to this container. Vite forwards
+  # every /api request to the backend container (see vite.config.js), so you
+  # don't need to publish the backend's port or configure CORS.
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_API_URL: /api
+      API_PROXY_TARGET: http://backend:5000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+# A named volume keeps the SQLite file and CSV reports when you stop the
+# containers. To start over with fresh demo data, run `docker compose down -v`.
+volumes:
+  app-data:

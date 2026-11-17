@@ -1,0 +1,23 @@
+# Production image for the Vue frontend, used by compose.prod.yaml.
+#
+# It has two stages. The first stage uses Node to build the app into plain
+# HTML, CSS, and JavaScript files. The second stage copies only those files
+# into a small nginx image, so Node and node_modules never reach production.
+
+# Stage 1: build the app.
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm install
+COPY . .
+# Vite reads VITE_API_URL at build time. "/api" makes the browser call the
+# same address it loaded the page from, and nginx forwards those calls.
+ENV VITE_API_URL=/api
+RUN npm run build
+
+# Stage 2: serve the built files with nginx.
+FROM nginx:1.27-alpine
+# nginx fills in ${API_UPSTREAM} in this template when the container starts.
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+ENV API_UPSTREAM=http://backend:5000
+COPY --from=build /app/dist /usr/share/nginx/html

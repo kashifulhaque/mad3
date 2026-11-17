@@ -1,0 +1,5 @@
+.DS_Store
+*.log
+# Local tool state, not project code.
+.cloudflare/
+dump.rdb
