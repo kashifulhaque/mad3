@@ -100,6 +100,21 @@ In Docker, the browser talks only to the frontend on port 5173. Vite
 forwards each `/api` request to the backend container. For details, see the
 comments in `compose.yaml` and `frontend/vite.config.js`.
 
+### Run in production
+
+The `compose.prod.yaml` file layers production settings on top of
+`compose.yaml`: Gunicorn runs the API, nginx serves the built frontend, and
+containers restart on their own. To start it, run the following command:
+
+```bash
+docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+```
+
+The frontend container, `mad3-frontend`, publishes no port. It joins an
+external Docker network called `edge`, where a reverse proxy such as Caddy
+reaches it on port 80 and adds HTTPS. If the network doesn't exist, create it
+with `docker network create edge`.
+
 ## Run without Docker
 
 ### Before you begin
